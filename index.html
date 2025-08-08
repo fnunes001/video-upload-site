@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gravar Vídeo e Enviar para Google Drive</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; background-color: #f9f9f9; }
+    video { width: 100%; margin-bottom: 10px; }
+    textarea { width: 100%; height: 100px; margin-top: 10px; }
+    button { padding: 10px 20px; margin: 5px 0; }
+  </style>
+</head>
+<body>
+  <h2>Gravar Vídeo e Escrever Mensagem</h2>
+
+  <video id="preview" autoplay muted></video>
+  <div>
+    <button id="startBtn">Gravar</button>
+    <button id="stopBtn" disabled>Parar</button>
+  </div>
+
+  <textarea id="mensagem" placeholder="Digite sua mensagem..."></textarea>
+  <button id="uploadBtn" disabled>Enviar para Google Drive</button>
+
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script>
+    let mediaRecorder;
+    let recordedChunks = [];
+    let videoBlob;
+
+    const preview = document.getElementById('preview');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const mensagem = document.getElementById('mensagem');
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then(stream => {
+        preview.srcObject = stream;
+        mediaRecorder = new MediaRecorder(stream);
+
+        mediaRecorder.ondataavailable = e => {
+          if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          videoBlob = new Blob(recordedChunks, { type: 'video/webm' });
+          uploadBtn.disabled = false;
+        };
+
+        startBtn.onclick = () => {
+          recordedChunks = [];
+          mediaRecorder.start();
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+        };
+
+        stopBtn.onclick = () => {
+          mediaRecorder.stop();
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+        };
+      });
+
+    function authenticate() {
+      return gapi.auth2.getAuthInstance().signIn({
+        scope: "https://www.googleapis.com/auth/drive.file"
+      }).then(() => {
+        console.log("Autenticado com sucesso!");
+      });
+    }
+
+    function loadClient() {
+      return gapi.client.load("https://content.googleapis.com/discovery/v1/apis/drive/v3/rest")
+        .then(() => {
+          console.log("API do Google Drive carregada!");
+        });
+    }
+
+    gapi.load("client:auth2", () => {
+      gapi.auth2.init({
+        client_id: "74062513196-15cef28plt20oac3q8njdik9c3e569rj.apps.googleusercontent.com"
+      });
+    });
+
+    uploadBtn.onclick = async () => {
+      await authenticate();
+      await loadClient();
+
+      const fileMetadata = { name: `video_${Date.now()}.webm` };
+      const media = {
+        mimeType: 'video/webm',
+        body: videoBlob
+      };
+
+      const request = gapi.client.drive.files.create({
+        resource: fileMetadata,
+        media: media,
+        fields: 'id'
+      });
+
+      request.execute(async file => {
+        console.log('Vídeo enviado. ID:', file.id);
+
+        const textBlob = new Blob([mensagem.value], { type: 'text/plain' });
+        const textMeta = { name: `mensagem_${Date.now()}.txt` };
+        const textMedia = {
+          mimeType: 'text/plain',
+          body: textBlob
+        };
+
+        const textRequest = gapi.client.drive.files.create({
+          resource: textMeta,
+          media: textMedia,
+          fields: 'id'
+        });
+
+        textRequest.execute(txtFile => {
+          alert('Vídeo e mensagem enviados com sucesso para o Google Drive!');
+        });
+      });
+    };
+  </script>
+</body>
+</html>
